@@ -1,5 +1,23 @@
-node_modules
-dist
+# Build çıktıları
+dist/
+build/
+
+# Bağımlılıklar
+node_modules/
+
+# Çevresel değişkenler
 .env
+.env.*
+!.env.example   # örnek dosya repoda kalsın
+
+# Editör / OS dosyaları
 .vscode/
 .DS_Store
+Thumbs.db
+
+# Önbellek / loglar
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
