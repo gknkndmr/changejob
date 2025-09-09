@@ -1,3 +1,4 @@
+// src/pages/Detay.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -11,14 +12,14 @@ import {
   Legend,
 } from "recharts";
 
-/* ------------------------------------------------
- *  Tipler
- * ------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/* Tipler                                                              */
+/* ------------------------------------------------------------------ */
 type Offer = {
-  maas: number; // TL/ay
-  yol: number;  // TL/ay
+  maas: number;  // TL/ay
+  yol: number;   // TL/ay
   yemek: number; // TL/ay
-  izin: number; // gün/yıl
+  izin: number;  // gün/yıl
 };
 
 type Weights = {
@@ -28,490 +29,402 @@ type Weights = {
   izin: number;
 };
 
-/* ------------------------------------------------
- *  Varsayılan veriler
- * ------------------------------------------------ */
-const DEFAULT_BEN: Offer = { maas: 35000, yol: 1500, yemek: 2500, izin: 14 };
-const DEFAULT_KARSI: Offer = { maas: 38000, yol: 2000, yemek: 2500, izin: 18 };
+/* ------------------------------------------------------------------ */
+/* Varsayılan Veriler                                                  */
+/* ------------------------------------------------------------------ */
+const BEN: Offer = { maas: 35000, yol: 1500, yemek: 2500, izin: 14 };
+const KARSI: Offer = { maas: 38000, yol: 2000, yemek: 2500, izin: 18 };
+const DEFAULT_W: Weights = { maas: 40, yol: 20, yemek: 15, izin: 25 };
 
-const DEFAULT_WEIGHTS: Weights = { maas: 40, yol: 20, yemek: 15, izin: 25 };
+const TL = new Intl.NumberFormat("tr-TR", {
+  style: "currency",
+  currency: "TRY",
+  maximumFractionDigits: 0,
+});
 
-const WEIGHT_PRESETS: Record<string, Weights> = {
-  "Denge":        { maas: 40, yol: 20, yemek: 15, izin: 25 },
-  "Maaş odaklı":  { maas: 70, yol: 10, yemek: 10, izin: 10 },
-  "Yol odaklı":   { maas: 30, yol: 50, yemek: 10, izin: 10 },
-  "Yemek odaklı": { maas: 30, yol: 10, yemek: 50, izin: 10 },
-  "İzin odaklı":  { maas: 25, yol: 15, yemek: 10, izin: 50 },
-};
+/* ------------------------------------------------------------------ */
+/* Yardımcılar                                                         */
+/* ------------------------------------------------------------------ */
+const clamp = (v: number, min = 0, max = 100) => Math.max(min, Math.min(max, v));
+const sumW = (w: Weights) => w.maas + w.yol + w.yemek + w.izin;
+const round1 = (n: number) => Math.round(n * 10) / 10;
 
-const LS_WEIGHTS = "cj.weights";
-
-/* ------------------------------------------------
- *  Yardımcılar
- * ------------------------------------------------ */
-
-// Her kalemi kendi içinde normalize et (Ben/Karşı toplam değil!)
-function normalize(b: number, k: number) {
-  const max = Math.max(b, k, 1);
-  return {
-    ben: Math.round((b / max) * 100),
-    karsi: Math.round((k / max) * 100),
-  };
+function normalize(a: number, b: number) {
+  const m = Math.max(a, b, 0.0001);
+  return { a: (a / m) * 100, b: (b / m) * 100 };
 }
 
-// Uyum skoru: ağırlıklı benzerlik ortalaması (0-100)
-function similarityScore(ben: Offer, karsi: Offer, weights: Weights) {
-  const sumW = Object.values(weights).reduce((a, b) => a + b, 0) || 1;
-  const W = {
-    maas: weights.maas / sumW,
-    yol: weights.yol / sumW,
-    yemek: weights.yemek / sumW,
-    izin: weights.izin / sumW,
-  };
-
-  const sim = (b: number, k: number) => 1 - Math.abs(b - k) / Math.max(b, k, 1);
-
-  const s =
-    sim(ben.maas, karsi.maas) * W.maas +
-    sim(ben.yol, karsi.yol) * W.yol +
-    sim(ben.yemek, karsi.yemek) * W.yemek +
-    sim(ben.izin, karsi.izin) * W.izin;
-
-  return Math.round(s * 100);
-}
-
-function clamp(v: number, min = 0, max = 100) {
-  return Math.max(min, Math.min(max, v));
-}
-
-/* ------------------------------------------------
- *  Sayfa
- * ------------------------------------------------ */
-
+/* ------------------------------------------------------------------ */
+/* Sayfa                                                               */
+/* ------------------------------------------------------------------ */
 export default function Detay() {
-  // Raw veriler
-  const [ben] = useState<Offer>(DEFAULT_BEN);
-  const [karsi] = useState<Offer>(DEFAULT_KARSI);
-
-  // Ağırlıklar (localStorage)
+  // Ağırlıklar (kalıcı)
+  const LS_KEY = "cj_weights_v1";
   const [weights, setWeights] = useState<Weights>(() => {
     try {
-      const raw = localStorage.getItem(LS_WEIGHTS);
-      if (raw) return JSON.parse(raw) as Weights;
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) {
+        const parsed: Weights = { ...DEFAULT_W, ...JSON.parse(raw) };
+        return sumW(parsed) === 100 ? parsed : DEFAULT_W;
+      }
     } catch {}
-    return DEFAULT_WEIGHTS;
+    return DEFAULT_W;
   });
-  const [activePreset, setActivePreset] = useState<string | null>(null);
 
   useEffect(() => {
-    localStorage.setItem(LS_WEIGHTS, JSON.stringify(weights));
+    localStorage.setItem(LS_KEY, JSON.stringify(weights));
   }, [weights]);
 
-  const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
-  const score = useMemo(() => similarityScore(ben, karsi, weights), [ben, karsi, weights]);
-
-  // Grafik verisi
+  // Grafik
   const chartData = useMemo(() => {
-    const nMaas = normalize(ben.maas, karsi.maas);
-    const nYol = normalize(ben.yol, karsi.yol);
-    const nYemek = normalize(ben.yemek, karsi.yemek);
-    const nIzin = normalize(ben.izin, karsi.izin);
+    const m = normalize(BEN.maas, KARSI.maas);
+    const y = normalize(BEN.yol, KARSI.yol);
+    const ye = normalize(BEN.yemek, KARSI.yemek);
+    const iz = normalize(BEN.izin, KARSI.izin);
     return [
-      { kalem: "Maaş", Ben: nMaas.ben, Karşı: nMaas.karsi },
-      { kalem: "Yol", Ben: nYol.ben, Karşı: nYol.karsi },
-      { kalem: "Yemek", Ben: nYemek.ben, Karşı: nYemek.karsi },
-      { kalem: "İzin (gün)", Ben: nIzin.ben, Karşı: nIzin.karsi },
+      { kalem: "Maaş", Ben: round1(m.a), Karşı: round1(m.b) },
+      { kalem: "Yol", Ben: round1(y.a), Karşı: round1(y.b) },
+      { kalem: "Yemek", Ben: round1(ye.a), Karşı: round1(ye.b) },
+      { kalem: "İzin (gün)", Ben: round1(iz.a), Karşı: round1(iz.b) },
     ];
-  }, [ben, karsi]);
+  }, []);
 
-  const setW = (key: keyof Weights, val: number) => {
-    setActivePreset(null);
-    setWeights((prev) => ({ ...prev, [key]: clamp(val) }));
+  // Uyum skoru
+  const matchScore = useMemo(() => {
+    const close = (a: number, b: number) => 100 - Math.abs(a - b);
+    return Math.round(
+      (close(chartData[0].Ben, chartData[0].Karşı) * weights.maas +
+        close(chartData[1].Ben, chartData[1].Karşı) * weights.yol +
+        close(chartData[2].Ben, chartData[2].Karşı) * weights.yemek +
+        close(chartData[3].Ben, chartData[3].Karşı) * weights.izin) / 100
+    );
+  }, [chartData, weights]);
+
+  // PDF indir
+  const pdfRef = useRef<HTMLDivElement>(null);
+  const handlePDF = async () => {
+    const [{ default: html2canvas }, jspdfMod] = await Promise.all([
+      import("html2canvas"),
+      import("jspdf"),
+    ]);
+    const jsPDF = jspdfMod.jsPDF;
+    if (!pdfRef.current) return;
+
+    const canvas = await html2canvas(pdfRef.current, { scale: 2, useCORS: true });
+    const img = canvas.toDataURL("image/png");
+    const pdf = new jsPDF({ unit: "pt", format: "a4" });
+
+    const pageW = pdf.internal.pageSize.getWidth();
+    const imgW = pageW - 48;
+    const imgH = (canvas.height / canvas.width) * imgW;
+
+    pdf.addImage(img, "PNG", 24, 24, imgW, imgH, "", "FAST");
+    pdf.save("teklif-karsilastirma.pdf");
   };
 
-  const normalizeWeightsTo100 = () => {
-    const sum = totalWeight || 1;
-    setWeights({
-      maas: Math.round((weights.maas / sum) * 100),
-      yol: Math.round((weights.yol / sum) * 100),
-      yemek: Math.round((weights.yemek / sum) * 100),
-      izin: Math.round((weights.izin / sum) * 100),
-    });
-    setActivePreset(null);
+  // Presetler
+  const presets: Record<string, Weights> = {
+    Denge: { maas: 25, yol: 25, yemek: 25, izin: 25 },
+    "Maaş odaklı": { maas: 50, yol: 20, yemek: 15, izin: 15 },
+    "Yol odaklı": { maas: 25, yol: 45, yemek: 15, izin: 15 },
+    "Yemek odaklı": { maas: 25, yol: 20, yemek: 40, izin: 15 },
+    "İzin odaklı": { maas: 25, yol: 20, yemek: 15, izin: 40 },
   };
 
-  const applyPreset = (name: string) => {
-    setWeights(WEIGHT_PRESETS[name]);
-    setActivePreset(name);
-  };
+  const equalize = () => {
+    const s = sumW(weights);
+    if (s === 100) return;
+    if (s <= 0) return setWeights(DEFAULT_W);
 
-  /* ---------- PDF Export ---------- */
-  const exportRef = useRef<HTMLDivElement>(null);
-  const [exporting, setExporting] = useState(false);
-
-  const handleExportPDF = async () => {
-    if (!exportRef.current || exporting) return;
-    try {
-      setExporting(true);
-
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import("html2canvas"),
-        import("jspdf"),
-      ]);
-
-      // Hangi alanı alacağız? exportRef
-      const element = exportRef.current;
-
-      // Daha net çıktı için scale=2
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        // PDF'e girmesini istemediklerimizi ignore edebiliriz (butonlar zaten ref dışında)
-        // ignoreElements: (el) => el.getAttribute("data-no-capture") === "true",
-      });
-
-      const imgData = canvas.toDataURL("image/png");
-
-      // A4 boyutu (mm)
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pageWidth = pdf.internal.pageSize.getWidth();  // 210mm
-      const pageHeight = pdf.internal.pageSize.getHeight(); // 297mm
-
-      // Görseli sayfa genişliğine oranlayarak yüksekliği hesapla
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight, undefined, "FAST");
-      heightLeft -= pageHeight;
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight, undefined, "FAST");
-        heightLeft -= pageHeight;
-      }
-
-      pdf.save("changejob-detay.pdf");
-    } catch (err) {
-      console.error("PDF export error:", err);
-      alert("PDF oluştururken bir sorun oluştu.");
-    } finally {
-      setExporting(false);
+    const k = 100 / s;
+    const w2: Weights = {
+      maas: Math.round(weights.maas * k),
+      yol: Math.round(weights.yol * k),
+      yemek: Math.round(weights.yemek * k),
+      izin: Math.round(weights.izin * k),
+    };
+    const diff = 100 - sumW(w2);
+    if (diff !== 0) {
+      // en büyük hangisiyse ona farkı ekle/çıkar
+      const entries = [
+        ["maas", w2.maas],
+        ["yol", w2.yol],
+        ["yemek", w2.yemek],
+        ["izin", w2.izin],
+      ] as const;
+      const maxKey = entries.sort((a, b) => b[1] - a[1])[0][0];
+      (w2 as any)[maxKey] = clamp((w2 as any)[maxKey] + diff, 0, 100);
     }
+    setWeights(w2);
   };
+
+  const totalOk = sumW(weights) === 100;
 
   return (
-    <div style={{ padding: "16px 20px", maxWidth: 1180, margin: "0 auto" }}>
-      {/* Bu üst satır PDF'e girmesin diye ref dışında */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          marginBottom: 6,
-        }}
-      >
-        <Link to="/" style={{ textDecoration: "none", color: "#475569" }}>
-          ← Ana sayfa
-        </Link>
-
-        <div style={{ flex: 1 }} />
-
-        <button
-          onClick={handleExportPDF}
-          disabled={exporting}
-          title="Karşılaştırmayı PDF olarak indir"
-          style={{
-            border: "1px solid #e2e8f0",
-            background: exporting ? "#e5e7eb" : "#ffffff",
-            color: "#0f172a",
-            borderRadius: 8,
-            padding: "8px 12px",
-            cursor: exporting ? "not-allowed" : "pointer",
-            fontWeight: 700,
-          }}
-        >
-          {exporting ? "Hazırlanıyor…" : "PDF indir"}
-        </button>
-      </div>
-
-      {/* --- PDF'e girecek alan: exportRef --- */}
-      <div ref={exportRef}>
-        <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: -0.3, marginTop: 4 }}>
-          Teklif Karşılaştırma
-        </h1>
-
-        {/* Uyum Skoru */}
-        <div
-          style={{
-            marginTop: 6,
-            display: "inline-block",
-            background: "#f1f5f9",
-            color: "#0f172a",
-            borderRadius: 8,
-            padding: "6px 10px",
-            fontWeight: 700,
-          }}
-        >
-          Uyum skoru:{" "}
+    <div style={{ maxWidth: 1180, margin: "0 auto", padding: "28px 24px" }}>
+      {/* Üst çubuk */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <Link to="/" style={{ color: "#64748b", textDecoration: "none" }}>
+            ← Ana sayfa
+          </Link>
+          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, color: "#111827" }}>
+            Teklif Karşılaştırma
+          </h1>
           <span
             style={{
-              color: score >= 70 ? "#16a34a" : score >= 40 ? "#ca8a04" : "#dc2626",
+              fontSize: 13,
+              padding: "4px 10px",
+              borderRadius: 999,
+              background: "#ecfdf5",
+              color: "#047857",
+              border: "1px solid #a7f3d0",
             }}
           >
-            %{score}
+            Uyum skoru: %{matchScore}
           </span>
         </div>
 
-        <div
+        <button
+          onClick={handlePDF}
           style={{
-            marginTop: 18,
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 18,
+            padding: "8px 12px",
+            borderRadius: 8,
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            color: "#0f172a",
+            cursor: "pointer",
           }}
         >
-          {/* Sol: Tablo */}
-          <div
-            style={{
-              border: "1px solid #e2e8f0",
-              borderRadius: 12,
-              overflow: "hidden",
-              background: "#fff",
-            }}
-          >
-            <div style={{ padding: "10px 12px", borderBottom: "1px solid #e2e8f0", fontWeight: 700 }}>
-              Ham Değerler (Yan Yana)
-            </div>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead style={{ background: "#f8fafc", color: "#0f172a" }}>
-                <tr>
-                  <th style={th}>Kalem</th>
-                  <th style={th}>Ben</th>
-                  <th style={th}>Karşı</th>
-                </tr>
-              </thead>
-              <tbody>
-                <Row label="Maaş (TL/ay)" ben={formatTL(ben.maas)} karsi={formatTL(karsi.maas)} />
-                <Row label="Yol (TL/ay)" ben={formatTL(ben.yol)} karsi={formatTL(karsi.yol)} />
-                <Row label="Yemek (TL/ay)" ben={formatTL(ben.yemek)} karsi={formatTL(karsi.yemek)} />
-                <Row label="İzin (gün/yıl)" ben={`${ben.izin} gün`} karsi={`${karsi.izin} gün`} />
-              </tbody>
-            </table>
-          </div>
+          PDF indir
+        </button>
+      </div>
 
-          {/* Sağ: Grafik */}
-          <div
-            style={{
-              border: "1px solid #e2e8f0",
-              borderRadius: 12,
-              background: "#fff",
-              padding: 12,
-            }}
-          >
-            <div style={{ fontWeight: 700, padding: "2px 4px 10px" }}>
-              Karşılaştırma Grafiği (Normalize %)
+      <div ref={pdfRef}>
+        {/* Üst: tablo + grafik */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 16,
+            marginTop: 16,
+            marginBottom: 12,
+          }}
+        >
+          {/* Tablo kartı */}
+          <Card title="Ham Değerler (Yan Yana)">
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", fontSize: 14, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ color: "#64748b" }}>
+                    <Th>Kalem</Th>
+                    <Th>Ben</Th>
+                    <Th>Karşı</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <Tr>
+                    <Td> Maaş (TL/ay) </Td>
+                    <TdStrong>{TL.format(BEN.maas)}</TdStrong>
+                    <TdStrong>{TL.format(KARSI.maas)}</TdStrong>
+                  </Tr>
+                  <Tr>
+                    <Td> Yol (TL/ay) </Td>
+                    <TdStrong>{TL.format(BEN.yol)}</TdStrong>
+                    <TdStrong>{TL.format(KARSI.yol)}</TdStrong>
+                  </Tr>
+                  <Tr>
+                    <Td> Yemek (TL/ay) </Td>
+                    <TdStrong>{TL.format(BEN.yemek)}</TdStrong>
+                    <TdStrong>{TL.format(KARSI.yemek)}</TdStrong>
+                  </Tr>
+                  <Tr>
+                    <Td> İzin (gün/yıl) </Td>
+                    <TdStrong>{BEN.izin} gün</TdStrong>
+                    <TdStrong>{KARSI.izin} gün</TdStrong>
+                  </Tr>
+                </tbody>
+              </table>
             </div>
-            <div style={{ height: 280 }}>
+          </Card>
+
+          {/* Grafik kartı */}
+          <Card title="Karşılaştırma Grafiği (Normalize %)">
+            <div style={{ height: 320 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="kalem" />
                   <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                  <Tooltip formatter={(v: number) => `${v}%`} />
+                  <Tooltip formatter={(v: number) => `${(v as number).toFixed(1)}%`} />
                   <Legend />
-                  <Bar dataKey="Ben" fill="#4f46e5" radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="Karşı" fill="#10b981" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="Ben" fill="#3b82f6" />
+                  <Bar dataKey="Karşı" fill="#22c55e" />
                 </BarChart>
               </ResponsiveContainer>
+              <p style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>
+                Not: Her kalem kendi içinde normalize edilir. Böylece maaş gibi büyük kalemler, izin
+                gibi küçük kalemleri ezmez.
+              </p>
             </div>
-            <div style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>
-              Not: Her kalem kendi içinde normalize edilir; böylece maaş gibi büyük kalemler, izin gibi küçük kalemleri ezmez.
-            </div>
-          </div>
+          </Card>
         </div>
 
         {/* Ağırlıklar */}
-        <div
-          style={{
-            marginTop: 18,
-            border: "1px solid #e2e8f0",
-            borderRadius: 12,
-            background: "#fff",
-          }}
-        >
-          <div style={{ padding: "10px 12px", borderBottom: "1px solid #e2e8f0", fontWeight: 700 }}>
-            Ağırlıklar
-          </div>
-
-          {/* Preset kısayolları */}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "10px 12px" }}>
-            {Object.keys(WEIGHT_PRESETS).map((name) => (
+        <Card title="Ağırlıklar">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+            {Object.entries(presets).map(([name, w]) => (
               <button
                 key={name}
-                onClick={() => applyPreset(name)}
+                onClick={() => setWeights(w)}
                 style={{
-                  border: "1px solid #e2e8f0",
-                  background: activePreset === name ? "#eef2ff" : "#ffffff",
-                  color: activePreset === name ? "#3730a3" : "#0f172a",
-                  borderRadius: 8,
                   padding: "6px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #e2e8f0",
+                  background: "#fff",
                   cursor: "pointer",
-                  fontWeight: 600,
                 }}
-                title={`${name} presetini uygula`}
               >
                 {name}
               </button>
             ))}
-            <div style={{ flex: 1 }} />
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                color: totalWeight === 100 ? "#16a34a" : "#dc2626",
-                fontWeight: 700,
-              }}
-            >
-              Toplam: %{totalWeight}
-              <button
-                onClick={normalizeWeightsTo100}
-                style={{
-                  border: "1px solid #e2e8f0",
-                  background: "#ffffff",
-                  color: "#0f172a",
-                  borderRadius: 8,
-                  padding: "6px 10px",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                }}
-              >
-                100’e eşitle
-              </button>
-            </div>
           </div>
 
-          {/* Kaydırıcılar */}
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-              gap: 16,
-              padding: 12,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              justifyContent: "flex-end",
+              marginBottom: 10,
             }}
           >
-            <Slider
-              label="Maaş"
-              value={weights.maas}
-              onChange={(v) => setW("maas", v)}
-              color="#4f46e5"
-            />
-            <Slider
-              label="Yol"
-              value={weights.yol}
-              onChange={(v) => setW("yol", v)}
-              color="#10b981"
-            />
-            <Slider
-              label="Yemek"
-              value={weights.yemek}
-              onChange={(v) => setW("yemek", v)}
-              color="#f59e0b"
-            />
-            <Slider
-              label="İzin"
-              value={weights.izin}
-              onChange={(v) => setW("izin", v)}
-              color="#ef4444"
-            />
+            <div style={{ fontSize: 14, color: totalOk ? "#16a34a" : "#dc2626" }}>
+              <strong>Toplam: %{sumW(weights)}</strong>
+            </div>
+            <button
+              onClick={equalize}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 8,
+                border: "1px solid #e2e8f0",
+                background: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              100’e eşitle
+            </button>
           </div>
-        </div>
 
-        {/* Footer (PDF'e dahil) */}
-        <div style={{ marginTop: 18, fontSize: 13, color: "#64748b" }}>
-          © {new Date().getFullYear()} ChangeJob — karar vermeyi kolaylaştırır.
-        </div>
+          <WeightSlider
+            label="Maaş"
+            value={weights.maas}
+            onChange={(v) => setWeights({ ...weights, maas: clamp(v) })}
+          />
+          <WeightSlider
+            label="Yol"
+            value={weights.yol}
+            onChange={(v) => setWeights({ ...weights, yol: clamp(v) })}
+          />
+          <WeightSlider
+            label="Yemek"
+            value={weights.yemek}
+            onChange={(v) => setWeights({ ...weights, yemek: clamp(v) })}
+          />
+          <WeightSlider
+            label="İzin"
+            value={weights.izin}
+            onChange={(v) => setWeights({ ...weights, izin: clamp(v) })}
+          />
+        </Card>
       </div>
-      {/* --- /exportRef --- */}
+
+      <footer style={{ fontSize: 12, color: "#94a3b8", marginTop: 16 }}>
+        © 2025 ChangeJob — karar vermeyi kolaylaştırır.
+      </footer>
     </div>
   );
 }
 
-/* ------------------------------------------------
- *  Alt bileşenler
- * ------------------------------------------------ */
-
-function Row({ label, ben, karsi }: { label: string; ben: string; karsi: string }) {
-  return (
-    <tr>
-      <td style={td}>{label}</td>
-      <td style={td}>{ben}</td>
-      <td style={td}>{karsi}</td>
-    </tr>
-  );
-}
-
-function Slider({
-  label,
-  value,
-  onChange,
-  color,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  color: string;
-}) {
+/* ------------------------------------------------------------------ */
+/* Küçük UI parçaları                                                  */
+/* ------------------------------------------------------------------ */
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div
       style={{
         border: "1px solid #e2e8f0",
-        borderRadius: 10,
-        padding: 12,
+        borderRadius: 12,
         background: "#fff",
+        overflow: "hidden",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-        <div style={{ fontWeight: 700, color: "#0f172a" }}>{label}</div>
-        <div style={{ fontWeight: 700, color }}>{`%${value}`}</div>
+      <div
+        style={{
+          padding: 12,
+          borderBottom: "1px solid #e2e8f0",
+          fontWeight: 600,
+          color: "#111827",
+        }}
+      >
+        {title}
       </div>
-      <input
-        type="range"
-        min={0}
-        max={100}
-        step={1}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        style={{ width: "100%" }}
-      />
+      <div style={{ padding: 12 }}>{children}</div>
     </div>
   );
 }
 
-/* ------------------------------------------------
- *  Stiller & küçük yardımcılar
- * ------------------------------------------------ */
+function WeightSlider({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "120px 1fr 56px",
+        alignItems: "center",
+        gap: 10,
+        margin: "10px 0",
+      }}
+    >
+      <div style={{ fontSize: 14, color: "#0f172a", fontWeight: 600 }}>{label}</div>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{ width: "100%" }}
+      />
+      <div style={{ fontSize: 14, color: "#0f172a", fontWeight: 600 }}>%{value}</div>
+    </div>
+  );
+}
 
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "10px 12px",
-  fontWeight: 700,
-  borderBottom: "1px solid #e2e8f0",
-};
-
-const td: React.CSSProperties = {
-  padding: "10px 12px",
-  borderBottom: "1px solid #f1f5f9",
-};
-
-function formatTL(v: number) {
-  try {
-    return v.toLocaleString("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: 0 });
-  } catch {
-    return `${v} TL`;
-  }
+/* Tablo hücreleri */
+function Th({ children }: { children: React.ReactNode }) {
+  return (
+    <th style={{ textAlign: "left", padding: "8px 10px", borderBottom: "1px solid #e2e8f0" }}>
+      {children}
+    </th>
+  );
+}
+function Td({ children }: { children: React.ReactNode }) {
+  return <td style={{ padding: "8px 10px", borderBottom: "1px solid #f1f5f9" }}>{children}</td>;
+}
+function TdStrong({ children }: { children: React.ReactNode }) {
+  return (
+    <td style={{ padding: "8px 10px", borderBottom: "1px solid #f1f5f9", fontWeight: 600 }}>
+      {children}
+    </td>
+  );
+}
+function Tr({ children }: { children: React.ReactNode }) {
+  return <tr style={{ color: "#0f172a" }}>{children}</tr>;
 }

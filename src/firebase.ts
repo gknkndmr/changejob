@@ -1,25 +1,36 @@
-import { initializeApp } from "firebase/app";
-import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
+// src/firebase.ts
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+// Firestore / Storage kullanacaksan yorumları aç
+// import { getFirestore } from "firebase/firestore";
+// import { getStorage } from "firebase/storage";
+import { getAnalytics, isSupported, Analytics } from "firebase/analytics";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAWNZYXJizMQvkVW9UvogBJ9Z9g5fByUp8",
-  authDomain: "changejob-718ae.firebaseapp.com",
-  projectId: "changejob-718ae",
-  storageBucket: "changejob-718ae.firebasestorage.app",
-  messagingSenderId: "188980502622",
-  appId: "1:188980502622:web:80ee1fe422435b76fd98cf",
-  measurementId: "G-K3T884HZCV",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  // measurementId opsiyonel; varsa analytics’i açarız
+  ...(import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+    ? { measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID }
+    : {}),
 };
 
-const app = initializeApp(firebaseConfig);
+// SSR / HMR sırasında birden fazla init'i önlemek için:
+export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+
+// Temel servisler:
 export const auth = getAuth(app);
-setPersistence(auth, browserLocalPersistence);
+// export const db = getFirestore(app);
+// export const storage = getStorage(app);
 
-if (import.meta.env.DEV) {
-  (auth as any).settings.appVerificationDisabledForTesting = true;
-}
-
-console.log(
-  "Auth domain:", firebaseConfig.authDomain,
-  "| API key:", (firebaseConfig.apiKey ?? "").slice(0,4) + "…"
-);
+// Analytics (yalnızca destekleniyorsa ve tarayıcıda):
+export let analytics: Analytics | undefined = undefined;
+isSupported().then((ok) => {
+  if (ok && typeof window !== "undefined" && location.protocol === "https:") {
+    analytics = getAnalytics(app);
+  }
+});

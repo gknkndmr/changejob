@@ -1,27 +1,16 @@
-import { Routes, Route, Link } from "react-router-dom";
+// src/App.tsx
+import { Routes, Route, Navigate } from "react-router-dom";
 import Home from "./pages/Home";
-import Detay from "./pages/Detay";
-import Kurumsal from "./pages/Kurumsal";
-import Giris from "./pages/Giris";
+import Profil from "./pages/Profil";
+import OfferForm from "./pages/OfferForm"; // <— ÖNEMLİ: tam bu yol
 
 export default function App() {
   return (
-    <>
-      {/* (İsteğe bağlı) Basit üst menü */}
-      <nav style={{ padding: 12, borderBottom: "1px solid #eee" }}>
-        <Link to="/" style={{ marginRight: 12 }}>Ana sayfa</Link>
-        <Link to="/detay" style={{ marginRight: 12 }}>Detay</Link>
-        <Link to="/kurumsal" style={{ marginRight: 12 }}>Kurumsal</Link>
-        <Link to="/giris">Giriş</Link>
-      </nav>
-
-      {/* Router sadece burada route'ları yönetir; App içinde BrowserRouter YOK */}
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/detay" element={<Detay />} />
-        <Route path="/kurumsal" element={<Kurumsal />} />
-        <Route path="/giris" element={<Giris />} />
-      </Routes>
-    </>
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/profil" element={<Profil />} />
+      <Route path="/teklif" element={<OfferForm />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
